@@ -24,7 +24,7 @@
 
 ## 📁 项目结构
 
-    ├── main.py                                # Python主程序
+    ├── main.py                                # Python 主程序
     ├── Capture Request Headers-1.0.user.js    # Tampermonkey 脚本
     ├── README.md                              # 项目文档
     ├── requirements.txt                       # 依赖列表
