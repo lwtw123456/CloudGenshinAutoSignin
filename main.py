@@ -32,7 +32,7 @@ def setup_browser(browser_path):
     if not os.path.exists(browser_path):
         raise FileNotFoundError(f"浏览器路径不存在: {browser_path}")
 
-    name = "my_browser"
+    name = "custom_browser"
     webbrowser.register(name, None, webbrowser.BackgroundBrowser(browser_path))
     _BROWSER_CONTROLLER = webbrowser.get(name)
 
@@ -72,53 +72,56 @@ state = SharedState()
 def handler(data):
     host = 'https://api-cloudgame.mihoyo.com'
     headers = data.get('headers')
+    try:
+        logger.info("开始获取钱包余额...")
+        resp = requests.get(
+            f'{host}/hk4e_cg_cn/wallet/wallet/get',
+            headers=headers
+        )
+        wallet_data = resp.json()
 
-    logger.info("开始获取钱包余额...")
-    resp = requests.get(
-        f'{host}/hk4e_cg_cn/wallet/wallet/get',
-        headers=headers
-    )
-    wallet_data = resp.json()
+        if wallet_data.get("retcode") == -100:
+            return False
 
-    if wallet_data.get("retcode") == -100:
+        free_time = wallet_data["data"]["free_time"]["free_time"]
+        play_card_msg = wallet_data["data"]["play_card"]["short_msg"]
+        coin_num = wallet_data["data"]["coin"]["coin_num"]
+        coin_minutes = int(coin_num) / 10 if coin_num is not None else 0
+
+        logger.info(
+            f"钱包：免费时长 {free_time} 分钟，"
+            f"畅玩卡状态「{play_card_msg}」，"
+            f"原点 {coin_num} 点（约 {coin_minutes:.0f} 分钟）"
+        )
+
+        logger.info("开始尝试领取奖励...")
+        resp = requests.get(
+            f'{host}/hk4e_cg_cn/gamer/api/listNotifications'
+            f'?status=NotificationStatusUnread'
+            f'&type=NotificationTypePopup&is_sort=true',
+            headers=headers
+        )
+
+        notification_list = resp.json()['data'].get('list', [])
+
+        if not notification_list:
+            logger.info("今天似乎已经签到过了...")
+        else:
+            for n in notification_list:
+                reward_id = n['msg']['id']
+                minutes = n['msg']['num']
+                msg = n['msg']['msg']
+
+                requests.post(
+                    f'{host}/hk4e_cg_cn/gamer/api/ackNotification',
+                    json={"id": reward_id},
+                    headers=headers
+                )
+
+                logger.info(f"领取奖励成功：{msg}，获得 {minutes} 分钟")
+    except requests.exceptions.RequestException as e:
+        print(e)
         return False
-
-    free_time = wallet_data["data"]["free_time"]["free_time"]
-    play_card_msg = wallet_data["data"]["play_card"]["short_msg"]
-    coin_num = wallet_data["data"]["coin"]["coin_num"]
-    coin_minutes = int(coin_num) / 10 if coin_num is not None else 0
-
-    logger.info(
-        f"钱包：免费时长 {free_time} 分钟，"
-        f"畅玩卡状态「{play_card_msg}」，"
-        f"原点 {coin_num} 点（约 {coin_minutes:.0f} 分钟）"
-    )
-
-    logger.info("开始尝试领取奖励...")
-    resp = requests.get(
-        f'{host}/hk4e_cg_cn/gamer/api/listNotifications'
-        f'?status=NotificationStatusUnread'
-        f'&type=NotificationTypePopup&is_sort=true',
-        headers=headers
-    )
-
-    notification_list = resp.json()['data'].get('list', [])
-
-    if not notification_list:
-        logger.info("今天似乎已经签到过了...")
-    else:
-        for n in notification_list:
-            reward_id = n['msg']['id']
-            minutes = n['msg']['num']
-            msg = n['msg']['msg']
-
-            requests.post(
-                f'{host}/hk4e_cg_cn/gamer/api/ackNotification',
-                json={"id": reward_id},
-                headers=headers
-            )
-
-            logger.info(f"领取奖励成功：{msg}，获得 {minutes} 分钟")
 
     return True
 
@@ -208,7 +211,7 @@ def validate_time_str(t):
 )
 @click.option(
     "--time", "-t", "run_time",
-    default="07:00",
+    default="09:00",
     show_default=True,
     help="每天几点执行签到，格式 HH:MM（例如 07:00 / 23:30）"
 )
