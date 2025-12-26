@@ -108,9 +108,9 @@ def handler(data):
         logger.info("今天似乎已经签到过了...")
     else:
         for n in notification_list:
-            reward_id = n['id']
-            minutes = n['num']
-            msg = n['msg']
+            reward_id = n['msg']['id']
+            minutes = n['msg']['num']
+            msg = n['msg']['msg']
 
             requests.post(
                 f'{host}/hk4e_cg_cn/gamer/api/ackNotification',
