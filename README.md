@@ -1,4 +1,4 @@
-# MiHoYo 云·原神 每日自动签到/领奖（Tampermonkey + Python）
+# MiHoYo 云·原神
 一个更容易使用的本地版云·原神自动签到领奖小工具。
 
 ## 📌 项目简介
