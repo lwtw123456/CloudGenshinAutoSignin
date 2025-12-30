@@ -9,6 +9,12 @@ import os
 import webbrowser
 import click
 from datetime import datetime
+import shutil
+import atexit
+import signal
+import subprocess
+import platform
+import ctypes
 
 # ================= 日志配置 =================
 logging.basicConfig(
@@ -16,6 +22,84 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
+logger = logging.getLogger(__name__)
+logging.getLogger('werkzeug').disabled = True
+logging.getLogger('flask.app').disabled = True
+
+# ================= 睡眠配置 =================
+_sleep_inhibitor_proc = None
+
+def _prevent_sleep():
+    global _sleep_inhibitor_proc
+    system = platform.system().lower()
+
+    try:
+        if system == "windows":
+            ES_CONTINUOUS = 0x80000000
+            ES_SYSTEM_REQUIRED = 0x00000001
+            ES_AWAYMODE_REQUIRED = 0x00000040  # stronger (may not be supported on all systems)
+            ctypes.windll.kernel32.SetThreadExecutionState(
+                ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_AWAYMODE_REQUIRED
+            )
+            logger.info("已启用防睡眠（Windows SetThreadExecutionState）")
+            return
+
+        if system == "darwin":
+            _sleep_inhibitor_proc = subprocess.Popen(
+                ["caffeinate", "-dimsu", "-w", str(os.getpid())],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            logger.info("已启用防睡眠（macOS caffeinate）")
+            return
+
+        if system == "linux":
+            if shutil.which("systemd-inhibit"):
+                _sleep_inhibitor_proc = subprocess.Popen(
+                    ["systemd-inhibit", "--what=sleep", "--mode=block", "--why=AutoSignIn is running", "sleep", "infinity"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                logger.info("已启用防睡眠（Linux systemd-inhibit）")
+            else:
+                logger.warning("未找到 systemd-inhibit，无法在 Linux 上自动防睡眠。可用系统电源设置/桌面环境的防睡眠选项。")
+            return
+
+        logger.warning(f"未知系统 {system}，未启用防睡眠。")
+    except Exception as e:
+        logger.warning(f"启用防睡眠失败：{e}")
+
+def _allow_sleep():
+    global _sleep_inhibitor_proc
+    system = platform.system().lower()
+
+    try:
+        if system == "windows":
+            ES_CONTINUOUS = 0x80000000
+            ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
+            logger.info("已恢复允许睡眠（Windows SetThreadExecutionState）")
+
+        if _sleep_inhibitor_proc and _sleep_inhibitor_proc.poll() is None:
+            _sleep_inhibitor_proc.terminate()
+            _sleep_inhibitor_proc = None
+            logger.info("已停止防睡眠辅助进程")
+    except Exception as e:
+        logger.warning(f"恢复允许睡眠失败：{e}")
+
+def _install_sleep_hooks():
+    _prevent_sleep()
+    atexit.register(_allow_sleep)
+
+    def _handle(sig, frame):
+        _allow_sleep()
+        raise SystemExit(0)
+
+    for _sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            signal.signal(_sig, _handle)
+        except Exception:
+            pass
+
 logger = logging.getLogger(__name__)
 logging.getLogger('werkzeug').disabled = True
 logging.getLogger('flask.app').disabled = True
@@ -211,11 +295,12 @@ def validate_time_str(t):
 )
 @click.option(
     "--time", "-t", "run_time",
-    default="09:00",
+    default="07:00",
     show_default=True,
     help="每天几点执行签到，格式 HH:MM（例如 07:00 / 23:30）"
 )
 def main(browser, run_time):
+    _install_sleep_hooks()
     click.echo = lambda message=None, file=None, nl=True, err=False, color=None: None
     try:
         setup_browser(browser)
