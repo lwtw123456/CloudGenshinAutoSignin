@@ -58,7 +58,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-#### 指定每日执行时间（默认 09:00）
+#### 指定每日执行时间（默认 07:00）
 ```bash
 python main.py --time 08:30
 ```
